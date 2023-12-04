@@ -1,0 +1,12 @@
+FROM postgres:15
+
+# Install pgvector extension
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    postgresql-13-pgvector
+
+# Create a directory for initialization scripts
+RUN mkdir -p /docker-entrypoint-initdb.d
+
+# Copy the initialization script to enable the pgvector extension
+COPY enable_pgvector.sql /docker-entrypoint-initdb.d/
