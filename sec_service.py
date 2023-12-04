@@ -1,5 +1,6 @@
 
 from enum import Enum
+from bs4 import BeautifulSoup
 from fastapi import HTTPException, status
 from sqlalchemy import select, func
 import httpx
@@ -52,8 +53,7 @@ async def get_filings(cik_str: str):
 
 async def get_sec_filing_document(cik_str: int, accession_number: str, primary_document: str):
     # Construct the SEC document URL
-    document_url = f"https://www.sec.gov/ix?doc=/Archives/edgar/data/{cik_str}/{accession_number}/{primary_document}"
-
+    document_url = f"https://www.sec.gov/Archives/edgar/data/{cik_str}/{accession_number}/{primary_document}"
     # Fetch the document in HTML format
     async with httpx.AsyncClient() as client:
         response = await client.get(document_url, headers=get_sec_headers())
@@ -89,7 +89,9 @@ async def test_documents_get(company_name, database):
     for form_type in FilingDocuments:
         try:
             document = await get_latest_documents(cik_str, form_type, filings_list)
-            print(f"First 10 lines of {form_type.value} document:")
-            print(document[:10])
+            soup = BeautifulSoup(document, "lxml")
+            item = soup.find("FORM 10")
+            print(f"item: {item}")
+            print(document)
         except HTTPException as e:
             print(f"Error: {e.detail}")
