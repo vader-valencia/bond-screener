@@ -1,17 +1,11 @@
-import os
-from dotenv import load_dotenv
-from sqlalchemy import UniqueConstraint, create_engine, Column, Integer, String, MetaData, Table
+from sqlalchemy import UniqueConstraint, create_engine, Column, Integer, String, MetaData, Table, DateTime, func
 from databases import Database
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import Session
 
-load_dotenv()
+from env_vars_helpers import DATABASE_URL
 
-# Database Configuration
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PWD = os.getenv("POSTGRES_PWD")
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PWD}@localhost:5432/{POSTGRES_DB}"
+
 database = Database(DATABASE_URL)
 metadata = MetaData()
 
@@ -25,6 +19,19 @@ sec_table = Table(
     Column('title', String, unique=True),  # Assuming 'title' is the column for company name
     UniqueConstraint('title', name='uq_sec_data_title'),
 )
+
+# Define the parent document metadata table
+document_metadata_table = Table(
+    'document_metadata',
+    metadata,
+    Column('id', Integer, primary_key=True, autoincrement=True),
+    Column('cik_str', Integer),
+    Column('accession_number',Integer),
+    Column('primary_document',String),
+    Column('document_type', String),
+    Column('timestamp', DateTime, default=func.now()), #edit this to be now()
+)
+
 
 engine = create_engine(DATABASE_URL)
 metadata.create_all(bind=engine)

@@ -7,8 +7,10 @@ import httpx
 import requests
 from dotenv import load_dotenv
 from database import get_db, sec_table
+import uvicorn
 
-from sec_service import get_cik_str_by_title, get_sec_headers, test_documents_get
+
+from sec_service import get_and_embed_all_latest_documents, get_cik_str_by_title, get_sec_headers
 
 load_dotenv()
 app = FastAPI()
@@ -49,13 +51,12 @@ async def get_company_documents(company_name: str, database=Depends(get_db)):
     # For simplicity, let's assume you have a function to get the company's CIK
 
     try:
-        await test_documents_get(company_name, database)
+        await get_and_embed_all_latest_documents(company_name, database)
         return {"message": "Documents retrieved successfully"}
     except Exception as e:
         return {"error": str(e)}
 
 if __name__ == "__main__":
-    import uvicorn
 
     uvicorn.run(
         "main:app",
