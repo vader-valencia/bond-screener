@@ -2,26 +2,18 @@
 from enum import Enum
 from bs4 import BeautifulSoup
 from fastapi import HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, insert
 import httpx
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import session, Session
+from databases import Database
 
 
-from database import sec_table, document_metadata_table
+
+from database import DocumentMetadata, SECData
 from embedding_manager import EmbeddingManager
 
 def get_sec_headers():
     return {"User-Agent": "Mozilla/5.0"}
-
-async def get_cik_str_by_title(title: str, database: Session):
-    # Create a SQLAlchemy select statement
-    query = select([sec_table.c.cik_str]).where(func.lower(sec_table.c.title).ilike(func.lower(f"%{title}%")))
-
-    # Execute the query and fetch the result
-    result = database.execute(query)
-    cik_result = result.scalar()
-
-    return cik_result
 
 async def get_filings(cik_str: str):
     # Add leading zeros to cik_str
@@ -87,6 +79,7 @@ from datetime import datetime
 
 async def get_and_embed_all_latest_documents(company_name, database):
     cik_str = await get_cik_str_by_title(company_name, database)
+    print(f"cik_str is {cik_str}")
     filings_list = await get_filings(cik_str)
 
     manager = EmbeddingManager()
@@ -118,15 +111,50 @@ async def get_and_embed_all_latest_documents(company_name, database):
         except HTTPException as e:
             print(f"Error: {e.detail}")
 
+async def get_cik_str_by_title(title: str, database: Session):
+    # Create a SQLAlchemy select statement
+    query = select([SECData.cik_str]).where(func.lower(SECData.title).ilike(func.lower(f"%{title}%")))
+
+    # Execute the query and fetch the result
+    result = database.execute(query)
+    cik_result = result.scalar()
+
+    return cik_result
+
 async def save_document_metadata(database: Session, cik_str, accession_number, primary_document, document_type):
-    # Insert metadata into the document_metadata table and return the inserted ID
-    query = document_metadata_table.insert().values(
+    # Create a DocumentMetadata object
+    document_metadata = DocumentMetadata(
         cik_str=cik_str,
         accession_number=accession_number,
         primary_document=primary_document,
         document_type=document_type.value,  # Assuming FilingDocuments is an Enum
         timestamp=datetime.now()
     )
-    async with database.transaction():
-        document_metadata_id = await database.execute(query)
-        return document_metadata_id
+    
+    # Add the DocumentMetadata object to the session
+    try:
+        database.add(document_metadata)
+        database.commit()  # Commit the transaction to save changes to the database
+        database.refresh(document_metadata)  # Refresh the object to get its updated ID
+    except Exception as e:
+        # Rollback the transaction in case of an error
+        database.rollback()
+        raise e
+
+    return document_metadata.id  # Return the ID of the inserted record
+
+    # Create a DocumentMetadata object
+    document_metadata = DocumentMetadata(
+        cik_str=cik_str,
+        accession_number=accession_number,
+        primary_document=primary_document,
+        document_type=document_type.value,  # Assuming FilingDocuments is an Enum
+        timestamp=datetime.now()
+    )
+    
+    # Add the DocumentMetadata object to the session
+    async with database() as session:
+        session.add(document_metadata)
+        session.commit()  # Commit the transaction to save changes to the database
+
+    return document_metadata.id  # Return the ID of the inserted record

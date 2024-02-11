@@ -1,7 +1,7 @@
 from sqlalchemy import UniqueConstraint, create_engine, Column, Integer, String, MetaData, Table, DateTime, func
 from databases import Database
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 
 from env_vars_helpers import DATABASE_URL
 
@@ -9,32 +9,33 @@ from env_vars_helpers import DATABASE_URL
 database = Database(DATABASE_URL)
 metadata = MetaData()
 
+Base = declarative_base()
+
 # Define the SEC data table
-sec_table = Table(
-    'sec_data',
-    metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('cik_str', Integer),
-    Column('ticker', String),
-    Column('title', String, unique=True),  # Assuming 'title' is the column for company name
-    UniqueConstraint('title', name='uq_sec_data_title'),
-)
+class SECData(Base):
+    __tablename__ = 'sec_data'
 
-# Define the parent document metadata table
-document_metadata_table = Table(
-    'document_metadata',
-    metadata,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('cik_str', Integer),
-    Column('accession_number',Integer),
-    Column('primary_document',String),
-    Column('document_type', String),
-    Column('timestamp', DateTime, default=func.now()), #edit this to be now()
-)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cik_str = Column(Integer)
+    ticker = Column(String)
+    title = Column(String)
 
+
+class DocumentMetadata(Base):
+    __tablename__ = 'document_metadata'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cik_str = Column(Integer)
+    accession_number = Column(String)
+    primary_document = Column(String)
+    document_type = Column(String)
+    timestamp = Column(DateTime)
 
 engine = create_engine(DATABASE_URL)
-metadata.create_all(bind=engine)
+
+async def init_db():
+    Base.metadata.create_all(bind=engine)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db() -> Session:

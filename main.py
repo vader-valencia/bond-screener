@@ -6,7 +6,7 @@ from sqlalchemy.ext.declarative import declarative_base
 import httpx
 import requests
 from dotenv import load_dotenv
-from database import get_db, sec_table
+from database import get_db, SECData, init_db
 import uvicorn
 
 
@@ -32,7 +32,7 @@ async def fetch_and_store_sec_data(database=Depends(get_db)):
 
         # Store data in the database with upsert based on the 'title' column
         for data in data_list:
-            stmt = insert(sec_table).values(data)
+            stmt = insert(SECData).values(data)
             stmt = stmt.on_conflict_do_update(
                 constraint='uq_sec_data_title',
                 set_=dict([(col.name, col) for col in stmt.excluded]),
@@ -55,6 +55,11 @@ async def get_company_documents(company_name: str, database=Depends(get_db)):
         return {"message": "Documents retrieved successfully"}
     except Exception as e:
         return {"error": str(e)}
+    
+
+@app.on_event("startup")
+async def on_startup():
+    await init_db()
 
 if __name__ == "__main__":
 
@@ -62,5 +67,6 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
+        debug=True
     )
