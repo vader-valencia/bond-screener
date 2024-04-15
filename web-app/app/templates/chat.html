@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Chat App</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" />
+  <style>
+    .chat-container {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .message-list {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    .message-list li {
+      margin-bottom: 10px;
+    }
+
+    .message-list .sender-name {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .message-list .message-content {
+      background-color: #f6f6f6;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    .input-box {
+      display: flex;
+      flex-direction: column;
+      margin-top: 20px;
+    }
+
+    .input-box input[type="text"],
+    .input-box textarea {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-right: 10px;
+    }
+
+    .input-box input[type="submit"] {
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .throbber {
+      display: none;
+      width: 16px;
+      height: 16px;
+      margin-left: 5px;
+      background-image: url("throbber.gif");
+      /* Updated to use local images correctly, adjust path as necessary */
+      background-size: contain;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="chat-container">
+    <select id="companySelect" class="form-select mb-3">
+      <option value="">Select a company</option>
+      <option value="AAPL">Apple Inc.</option>
+      <option value="NFLX">Netflix</option>
+      <option value="OPI">OPI Products</option>
+      <option value="NVDA">NVIDIA</option>
+      <option value="AMD">AMD</option>
+    </select>
+    <div id="companyLinks" class="company-links"></div>
+    <input type="file" id="fileInput" multiple accept="application/pdf" class="form-control mb-3">
+    <div id="errorContainer"></div>
+    <ul class="message-list" id="messageList"></ul>
+    <div class="input-box">
+      <textarea id="messageInput" placeholder="Type your message" rows="3"></textarea>
+      <input type="submit" value="Send" id="sendButton" disabled />
+      <span class="throbber" id="throbber"></span>
+    </div>
+  </div>
+
+  <script>
+    const conversationData = {{ conversation | tojson}};
+    const companySelect = document.getElementById("companySelect");
+    const fileInput = document.getElementById("fileInput");
+    const companyLinks = document.getElementById("companyLinks");
+    const errorContainer = document.getElementById("errorContainer");
+    const messageList = document.getElementById("messageList");
+    const messageInput = document.getElementById("messageInput");
+    const sendButton = document.getElementById("sendButton");
+    const throbber = document.getElementById("throbber");
+
+    function showThrobber() {
+      throbber.style.display = "inline-block";
+    }
+
+    function hideThrobber() {
+      throbber.style.display = "none";
+    }
+
+    const links = {
+      "AAPL": ["https://www.apple.com", "https://finance.yahoo.com/q?s=AAPL"],
+      "NFLX": ["https://www.netflix.com", "https://finance.yahoo.com/q?s=NFLX"],
+      "OPI": ["https://www.opi.com", "https://finance.yahoo.com/q?s=OPI"],
+      "NVDA": ["https://www.nvidia.com", "https://finance.yahoo.com/q?s=NVDA"],
+      "AMD": ["https://www.amd.com", "https://finance.yahoo.com/q?s=AMD"]
+    };
+
+    function displayCompanyLinks(company) {
+      companyLinks.innerHTML = ''; // Clear previous links
+      if (links[company]) {
+        links[company].forEach(url => {
+          const link = document.createElement('a');
+          link.href = url;
+          link.textContent = url;
+          link.target = '_blank';
+          const lineBreak = document.createElement('br');
+          companyLinks.appendChild(link);
+          companyLinks.appendChild(lineBreak);
+        });
+      }
+    }
+
+    function checkRequirements() {
+      const companySelected = companySelect.value !== "";
+      const filesUploaded = fileInput.files.length > 0;
+      const errors = [];
+
+      if (!companySelected) {
+        errors.push("Please select a company.");
+      }
+      if (!filesUploaded) {
+        errors.push("Please upload at least one PDF file.");
+      }
+
+      displayErrors(errors);
+
+      sendButton.disabled = errors.length > 0;
+    }
+
+    function displayErrors(errors) {
+      errorContainer.innerHTML = '';
+      errors.forEach(error => {
+        const errorP = document.createElement('p');
+        errorP.textContent = error;
+        errorP.className = 'error-message';
+        errorContainer.appendChild(errorP);
+      });
+    }
+
+    function renderMessage(sender, message) {
+      const listItem = document.createElement('li');
+      const senderName = document.createElement('div');
+      senderName.className = 'sender-name';
+      senderName.innerText = sender;
+
+      const messageContent = document.createElement('div');
+      messageContent.className = 'message-content';
+      messageContent.innerText = message;
+
+      listItem.appendChild(senderName);
+      listItem.appendChild(messageContent);
+      messageList.appendChild(listItem);
+    }
+
+    // Render initial conversation data
+    function renderConversation() {
+      conversationData.forEach((item) => {
+        const listItem = document.createElement("li");
+        const senderName = document.createElement("div");
+        senderName.className = "sender-name";
+        senderName.innerText = translateRole(item.role);
+
+        const messageContent = document.createElement("div");
+        messageContent.className = "message-content";
+        messageContent.innerText = item.content;
+
+        listItem.appendChild(senderName);
+        listItem.appendChild(messageContent);
+        messageList.appendChild(listItem);
+      });
+    }
+
+    // Handle message submission
+    function submitMessage() {
+      const message = messageInput.value.trim();
+      if (message !== '') {
+        renderMessage('You', message);
+        messageInput.value = '';
+        showThrobber(); // Show the throbber before making the API call
+
+
+        fetch('/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ message })
+        })
+          .then(response => response.json())
+          .then(data => {
+            const responseMessage = data.message;
+            renderMessage('ChatGPT', responseMessage);
+          })
+          .catch(error => {
+            console.error('Error:', error);
+          })
+          .finally(() => {
+            hideThrobber();
+          });
+
+      }
+    }
+
+    companySelect.addEventListener("change", function () {
+      const selectedCompany = companySelect.value;
+      displayCompanyLinks(selectedCompany);
+      checkRequirements();
+    });
+
+    fileInput.addEventListener("change", function () {
+      checkRequirements();
+    });
+
+    sendButton.addEventListener("click", submitMessage);
+    messageInput.addEventListener("keydown", (event) => {
+      if (event.keyCode === 13 && !event.shiftKey) {
+        event.preventDefault();
+        submitMessage();
+      }
+    });
+
+    // Render initial conversation
+    renderConversation();
+
+  </script>
+</body>
+
+</html>
