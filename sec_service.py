@@ -1,7 +1,9 @@
 
 from enum import Enum
+from typing import List
 from bs4 import BeautifulSoup
 from fastapi import HTTPException, status
+from models import UrlDocument
 from sqlalchemy import select, func, insert
 import httpx
 from sqlalchemy.orm import session, Session
@@ -42,23 +44,25 @@ async def get_filings(cik_str: str):
     except Exception as e:
         # Handle other exceptions
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 
 async def get_sec_filing_document(cik_str: int, accession_number: str, primary_document: str):
     # Construct the SEC document URL
     formatted_accession_number = accession_number.replace("-", "")
     document_url = f"https://www.sec.gov/Archives/edgar/data/{cik_str}/{formatted_accession_number}/{primary_document}"
     print(f"document url: {document_url}")
-    # Fetch the document in HTML format
-    async with httpx.AsyncClient() as client:
-        response = await client.get(document_url, headers=get_sec_headers())
+    return (document_url, accession_number, primary_document)
 
-        # Check if the request was successful (status code 200)
-        if response.status_code == 200:
-            return (response.text, accession_number, primary_document)
-        else:
-            # Raise an HTTPException if the request was not successful
-            raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch document. Status code: {response.status_code}")
+    # # Fetch the document in HTML format
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.get(document_url, headers=get_sec_headers())
+
+    #     # Check if the request was successful (status code 200)
+    #     if response.status_code == 200:
+    #         return (response.text, accession_number, primary_document)
+    #     else:
+    #         # Raise an HTTPException if the request was not successful
+    #         raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch document. Status code: {response.status_code}")
 
 class FilingDocuments(Enum):
     EightK = "8-K"
@@ -77,24 +81,40 @@ async def get_latest_documents(cik_str, form_type: FilingDocuments, filings_list
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No filing available for cik:{cik_str}, form_type:{form_type}")
 from datetime import datetime
 
-async def get_and_embed_all_latest_documents(company_name, database):
+async def get_all_latest_documents(company_name, database) -> List[UrlDocument]:
     cik_str = await get_cik_str_by_title(company_name, database)
-    print(f"cik_str is {cik_str}")
+    print(f"cik_str is {cik_str}, company name is {company_name}")
     filings_list = await get_filings(cik_str)
 
-    manager = EmbeddingManager()
+    documents: List[UrlDocument] = []
 
     for form_type in FilingDocuments:
         try:
             # Get the latest document information
-            (document, accession_number, primary_document) = await get_latest_documents(cik_str, form_type, filings_list)
+            (document_url, accession_number, primary_document_type) = await get_latest_documents(cik_str, form_type, filings_list)
+            documents.append(UrlDocument(
+                cik_str = cik_str,
+                accession_number = accession_number,
+                primary_document_type = primary_document_type ,
+                url = document_url 
+            ))
+
+        except HTTPException as e:
+            print(f"Error: {e.detail}")
+    return documents
+
+async def store_company_documents(company_name, documents, database):
+    manager = EmbeddingManager()
+
+    for document in documents:
+        try:
             document_text = BeautifulSoup(document, "lxml").getText()
 
             # Split the document text into chunks
             docs = manager.split_text(text=document_text, chunk_size=1500, overlap=150)
-
+            
             # Save document metadata in the document_metadata table
-            document_metadata_id = await save_document_metadata(database, cik_str, accession_number, primary_document, form_type)
+            document_metadata_id = await save_document_metadata(database, document.cik_str, document.accession_number, document.primary_document, document.form_type)
 
             # Embed the document chunks and store them in the database
             metadata_list = [
@@ -113,10 +133,13 @@ async def get_and_embed_all_latest_documents(company_name, database):
 
 async def get_cik_str_by_title(title: str, database: Session):
     # Create a SQLAlchemy select statement
-    query = select([SECData.cik_str]).where(func.lower(SECData.title).ilike(func.lower(f"%{title}%")))
+    print(f"title is {title}")
+    query = select([SECData.cik_str]).where(func.lower(SECData.title).ilike(func.lower(f"{title}")))
+    #query = select([SECData.cik_str])
 
     # Execute the query and fetch the result
     result = database.execute(query)
+    print(result)
     cik_result = result.scalar()
 
     return cik_result
