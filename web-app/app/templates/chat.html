@@ -78,8 +78,10 @@
       <option value="AMD">AMD</option>
     </select>
     <div id="companyLinks" class="company-links"></div>
-    <input type="file" id="fileInput" multiple accept="application/pdf" class="form-control mb-3">
     <div id="errorContainer"></div>
+    <div class="input-box">
+      <input type="submit" id="submitDocumentsButton" value="Submit Selected Documents" />
+    </div>
     <ul class="message-list" id="messageList"></ul>
     <div class="input-box">
       <textarea id="messageInput" placeholder="Type your message" rows="3"></textarea>
@@ -107,6 +109,8 @@
       throbber.style.display = "none";
     }
 
+    document.getElementById('submitDocumentsButton').addEventListener('click', submitSelectedDocuments);
+
     const links = {
       "APPLE INC": ["https://www.apple.com", "https://finance.yahoo.com/q?s=AAPL"],
       "Netflix": ["https://www.netflix.com", "https://finance.yahoo.com/q?s=NFLX"],
@@ -115,27 +119,24 @@
       "AMD": ["https://www.amd.com", "https://finance.yahoo.com/q?s=AMD"]
     };
 
+    let selectedDocuments = [];
+
     function displayCompanyLinks(company) {
       companyLinks.innerHTML = ''; // Clear previous links
       if (company) {
         fetch(`http://localhost:8000/get-company-documents/${company}`)
           .then(response => {
-            response.json()
-            console.log(reponse.json())
+            if (!response.ok) {
+              throw new Error('Network response was not ok: ' + response.statusText);
+            }
+            return response.json();
           })
           .then(data => {
+            console.log(data); // Log data to see what you actually get from the server
             if (data.error) {
               alert('Error retrieving documents: ' + data.error);
             } else {
-              data.urls.forEach(url => {
-                const link = document.createElement('a');
-                link.href = url;
-                link.textContent = url;
-                link.target = '_blank';
-                const lineBreak = document.createElement('br');
-                companyLinks.appendChild(link);
-                companyLinks.appendChild(lineBreak);
-              });
+              displayDocuments(data);
             }
           })
           .catch(error => {
@@ -144,6 +145,59 @@
           });
       }
     }
+
+    function displayDocuments(data) {
+      data.forEach(element => {
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.marginBottom = '10px';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.marginRight = '10px';
+        checkbox.onchange = function () {
+          if (this.checked) {
+            selectedDocuments.push(element.url); // Add the document URL to the selected list
+            window.open(element.url, '_blank'); // Open the document in a new tab
+          } else {
+            selectedDocuments = selectedDocuments.filter(url => url !== element.url); // Remove the document URL from the selected list
+          }
+        };
+
+        const link = document.createElement('a');
+        link.href = element.url;
+        link.textContent = element.primary_document_type;
+        link.target = '_blank';
+
+        container.appendChild(checkbox);
+        container.appendChild(link);
+        companyLinks.appendChild(container);
+      });
+    }
+
+
+    function submitSelectedDocuments() {
+      console.log('Submitting:', selectedDocuments);
+      fetch('http://localhost:8000/post-endpoint', { // Replace with your actual POST endpoint
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ documents: selectedDocuments })
+      })
+        .then(response => response.json())
+        .then(data => {
+          console.log('Submission successful:', data);
+          alert('Documents submitted successfully!');
+        })
+        .catch(error => {
+          console.error('Error submitting documents:', error);
+          alert('Failed to submit documents.');
+        });
+    }
+
+
 
     function checkRequirements() {
       const companySelected = companySelect.value !== "";

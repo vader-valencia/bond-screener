@@ -13,11 +13,14 @@ from dotenv import load_dotenv
 from database import get_db, SECData, init_db
 import uvicorn
 
-import sec_service
+from sec_service import SECService
+
 #from sec_service import get_and_embed_all_latest_documents, get_cik_str_by_title, get_sec_headers
 
 load_dotenv()
 app = FastAPI()
+
+secService = SECService()
 
 origins = ["*"]
     # "http://localhost:5000",  # Adjust to match the URL of your frontend
@@ -64,7 +67,7 @@ async def fetch_and_store_sec_data(database=Depends(get_db)):
 @app.get("/get-company-documents/{company_name}")
 async def get_company_documents(company_name: str, database=Depends(get_db)):
     try:
-        documents: List[UrlDocument] = await sec_service.get_all_latest_documents(company_name, database)
+        documents: List[UrlDocument] = await secService.get_all_latest_documents(company_name, database)
         if not documents:
             raise HTTPException(status_code=404, detail="No documents found for the company")
         return documents #{"company_name": company_name, "documents": documents}
@@ -72,20 +75,12 @@ async def get_company_documents(company_name: str, database=Depends(get_db)):
         return {"error": str(e)}
     
 
-@app.put("/store-company-documents/{company_name}")
-async def store_company_documents(company_name: str, documents: List[EmbeddableDocumentForm], files: List[UploadFile] = File(...), database=Depends(get_db)):
+@app.put("/store-company-documents/{cik_str}")
+async def store_company_documents(cik_str: str, documents: List[UrlDocument], database=Depends(get_db)):
     try:
-        documents_with_files = []
-        for document, file in zip(documents, files):
-            content = await file.read()
-            # Now you have the file content and the metadata, process as needed
-            document_dict = document.dict()
-            document_dict['file_content'] = content  # Assuming you handle binary content accordingly
-            documents_with_files.append(document_dict)
-
-        # Process documents with files as needed, e.g., storing them in a database
-        await sec_service.store_company_documents(company_name, documents_with_files, database)
-        return {"message": f"Successfully created documents for {company_name}"}
+        documents_with_files = secService.get_filing_documents(documents)
+        await secService.store_company_documents(cik_str, documents_with_files, database)
+        return {"message": f"Successfully created documents for cik: {cik_str}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
