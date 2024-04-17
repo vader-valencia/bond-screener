@@ -8,9 +8,9 @@ Screening tool for bonds
 `python -m flask --app run.py run`
 
 # Running Postgres 15
-- psql -U <postgres> -h localhost -p 5432 -W
+- `psql -U <postgres> -h localhost -p 5432 -W`
     - replace <postgres> with the usename of the postgres installation
 
 # Preferred method -- running with Docker
-1. docker build -t postgres_pgvector_image .
-2. docker run --name container_name -d postgres_pgvector_image
+1. `docker build -t postgres_pgvector_image .`
+2. `docker run --name container_name -d postgres_pgvector_image`
