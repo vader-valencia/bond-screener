@@ -29,8 +29,6 @@ class DocumentMetadata(Base):
     accession_number = Column(String)
     primary_document = Column(String)
     document_type = Column(String)
-    embedding_type = Column(String)
-    model_name = Column(String)
     timestamp = Column(DateTime)
 
 engine = create_engine(DATABASE_URL)

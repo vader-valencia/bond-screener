@@ -24,7 +24,7 @@ class SECService:
         self.embeddingManager = EmbeddingManager()
         self.headers = {"User-Agent": "Mozilla/5.0"}
 
-    async def get_filings(cik_str: str):
+    async def get_filings(self, cik_str: str):
         # Add leading zeros to cik_str
         cik_str = str(cik_str).zfill(10)
 
@@ -33,7 +33,7 @@ class SECService:
         
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(filings_endpoint, headers=get_sec_headers())
+                response = await client.get(filings_endpoint, headers=self.headers)
                 response.raise_for_status()  # Raise an exception for non-2xx responses
                 filings_data = response.json()
                 
@@ -53,7 +53,7 @@ class SECService:
             raise HTTPException(status_code=500, detail=str(e))
         
 
-    def get_sec_filing_document(cik_str: int, accession_number: str, primary_document: str):
+    def get_sec_filing_document(self, cik_str: int, accession_number: str, primary_document: str):
         # Construct the SEC document URL
         formatted_accession_number = accession_number.replace("-", "")
         document_url = f"https://www.sec.gov/Archives/edgar/data/{cik_str}/{formatted_accession_number}/{primary_document}"
@@ -61,9 +61,9 @@ class SECService:
         return (document_url, accession_number, primary_document)
 
 
-    async def fetch_filing_document(document_url):   #Fetch the document in HTML format
+    async def fetch_filing_document(self, document_url):   #Fetch the document in HTML format
         async with httpx.AsyncClient() as client:
-            response = await client.get(document_url, headers=get_sec_headers())
+            response = await client.get(document_url, headers=self.headers)
 
             # Check if the request was successful (status code 200)
             if response.status_code == 200:
@@ -72,28 +72,28 @@ class SECService:
                 # Raise an HTTPException if the request was not successful
                 raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch document. Status code: {response.status_code}")
 
-    async def get_latest_documents(self, cik_str, form_type: FilingDocuments, filings_list):
+    def get_latest_documents(self, cik_str, form_type: FilingDocuments, filings_list):
         most_recent_index = min((index for index, form in enumerate(filings_list["filings"]["filings"]["recent"]["form"]) if form == form_type.value), default=None)
         print(f"most_recent_index: {most_recent_index}")
         if most_recent_index is not None:
             accession_number = filings_list["filings"]["filings"]["recent"]["accessionNumber"][most_recent_index]
             primary_document = filings_list["filings"]["filings"]["recent"]["primaryDocument"][most_recent_index]
-            return await self.get_sec_filing_document(cik_str=cik_str, accession_number=accession_number, primary_document=primary_document)
+            return self.get_sec_filing_document(cik_str=cik_str, accession_number=accession_number, primary_document=primary_document)
         else:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No filing available for cik:{cik_str}, form_type:{form_type}")
     from datetime import datetime
 
     async def get_all_latest_documents(self, company_name, database) -> List[UrlDocument]:
         cik_str = await self.get_cik_str_by_title(company_name, database)
-        print(f"cik_str is {cik_str}, company name is {company_name}")
         filings_list = await self.get_filings(cik_str)
 
         documents: List[UrlDocument] = []
 
         for form_type in FilingDocuments:
             try:
+                print("going through the form tpes")
                 # Get the latest document information
-                (document_url, accession_number, primary_document_type) = await get_latest_documents(cik_str, form_type, filings_list)
+                (document_url, accession_number, primary_document_type) = self.get_latest_documents(cik_str, form_type, filings_list)
                 documents.append(UrlDocument(
                     cik_str = cik_str,
                     accession_number = accession_number,
@@ -105,56 +105,59 @@ class SECService:
                 print(f"Error: {e.detail}")
         return documents
 
-    def document_already_exists_in_db(self, document: UrlDocument) -> bool:
+    def document_already_exists_in_db(self, document: UrlDocument, database: Session) -> bool:
         # Build a query that matches all relevant fields except the timestamp
         query = select(DocumentMetadata).where(
             (DocumentMetadata.cik_str == document.cik_str) &
             (DocumentMetadata.accession_number == document.accession_number) &
-            (DocumentMetadata.document_type == document.primary_document_type) &
-            (DocumentMetadata.embedding_type == self.embeddingManager.get_embedding_type()) &
-            (DocumentMetadata.embedding_model == self.embeddingManager.get_model_name())
+            (DocumentMetadata.document_type == document.primary_document_type)
         )
         
         # Execute the query and fetch the first result
-        result = self.session.execute(query).scalar_one_or_none()
+        result = database.execute(query).scalar_one_or_none()
 
         # Check if any result was found
         return result is not None
 
-    def get_filing_documents(self, documents: List[UrlDocument], overwrite=False):
+    async def get_filing_documents(self, documents: List[UrlDocument],  database: Session, overwrite=False) -> List[EmbeddableDocument]:
         documents_with_files = []
         for document in documents:
-            if not overwrite and not self.document_already_exists_in_db(document):
-                document_text = self.fetch_filing_document(document)
+            document_preexists = self.document_already_exists_in_db(document, database)
+            print("doc exists search done")
+            if not(document_preexists) or (document_preexists and overwrite):
+                document_text = await self.fetch_filing_document(document.url)
+                print("fetched filing document")
                 embeddableDocument = EmbeddableDocument(
                     cik_str = document.cik_str,
-                    accession_number = document,
+                    accession_number = document.accession_number,
                     primary_document = document_text,
                     primary_document_type = document.primary_document_type
                 )
                 documents_with_files.append(embeddableDocument)
         return documents_with_files
 
-    async def store_company_documents(self, cik_str, documents, database, manager: EmbeddingManager):
-        embedding_type = manager.get_embedding_type()
-        model_name = manager.get_model_name()
+    async def store_company_documents(self, cik_str, documents: List[EmbeddableDocument], database):
+        embedding_type = self.embeddingManager.get_embedding_type()
+        model_name = self.embeddingManager.get_model_name()
 
         for document in documents:
             try:
-                document_text = BeautifulSoup(document, "lxml").getText()
+                document_text = BeautifulSoup(document.primary_document, "lxml").getText()
 
                 # Split the document text into chunks
-                docs = manager.split_text(text=document_text, chunk_size=1500, overlap=150)
+                docs = self.embeddingManager.split_text(text=document_text, chunk_size=1500, overlap=150)
                 
                 # Save document metadata in the document_metadata table
                 document_metadata_id = await self.save_document_metadata(database, 
                                                                     document.cik_str, 
                                                                     document.accession_number, 
                                                                     document.primary_document, 
-                                                                    document.form_type,
+                                                                    document.primary_document_type,
                                                                     embedding_type,
-                                                                    model_name)                                                )
+                                                                    model_name
+                                                                    )                                                
 
+                print("metadata saved")
                 # Embed the document chunks and store them in the database
                 metadata_list = [
                     {
@@ -163,14 +166,13 @@ class SECService:
                     }
                     for _ in docs
                 ]
-                manager.embed_documents(texts=docs, metadatas=metadata_list)
+                self.embeddingManager.embed_documents(texts=docs, metadatas=metadata_list)
+                print("document embedded")
 
-                item = BeautifulSoup(document, "lxml").find("FORM 10")
-                print(f"item: {item}")
             except HTTPException as e:
                 print(f"Error: {e.detail}")
 
-    async def get_cik_str_by_title(title: str, database: Session):
+    async def get_cik_str_by_title(self, title: str, database: Session):
         # Create a SQLAlchemy select statement
         query = select([SECData.cik_str]).where(func.lower(SECData.title).ilike(func.lower(f"{title}")))
 
@@ -180,15 +182,14 @@ class SECService:
 
         return cik_result
 
-    async def save_document_metadata(database: Session, cik_str, accession_number, primary_document, document_type, embedding_type, model_name):
+    async def save_document_metadata(self, database: Session, cik_str, accession_number, primary_document, document_type, embedding_type, model_name):
         # Create a DocumentMetadata object
+        print("made it to saving doc metadata")
         document_metadata = DocumentMetadata(
             cik_str=cik_str,
             accession_number=accession_number,
             primary_document=primary_document,
-            document_type=document_type.value,  # Assuming FilingDocuments is an Enum
-            embedding_type=embedding_type,
-            model_name=model_name,
+            document_type=document_type,  # Assuming FilingDocuments is an Enum
             timestamp=datetime.now()
         )
         
@@ -197,6 +198,7 @@ class SECService:
             database.add(document_metadata)
             database.commit()  # Commit the transaction to save changes to the database
             database.refresh(document_metadata)  # Refresh the object to get its updated ID
+            print("refreshed db")
         except Exception as e:
             # Rollback the transaction in case of an error
             database.rollback()

@@ -4,7 +4,7 @@ from typing import List
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from models import EmbeddableDocument, EmbeddableDocumentForm, UrlDocument
+from models import EmbeddableDocument, UrlDocument
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.declarative import declarative_base
 import httpx
@@ -75,10 +75,12 @@ async def get_company_documents(company_name: str, database=Depends(get_db)):
         return {"error": str(e)}
     
 
-@app.put("/store-company-documents/{cik_str}")
-async def store_company_documents(cik_str: str, documents: List[UrlDocument], database=Depends(get_db)):
+@app.put("/store-company-documents")
+async def store_company_documents(documents: List[UrlDocument], database=Depends(get_db)):
     try:
-        documents_with_files = secService.get_filing_documents(documents)
+        cik_str = documents[0].cik_str
+        documents_with_files = await secService.get_filing_documents(documents, database)
+        print("got filing docs")
         await secService.store_company_documents(cik_str, documents_with_files, database)
         return {"message": f"Successfully created documents for cik: {cik_str}"}
     except Exception as e:
