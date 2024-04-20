@@ -113,8 +113,7 @@ class SECService:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"No filing available for cik:{cik_str}, form_type:{form_type}")
     from datetime import datetime
 
-    async def get_all_latest_documents(self, company_name, database) -> List[UrlDocument]:
-        cik_str = await self.get_cik_str_by_title(company_name, database)
+    async def get_all_latest_documents(self, cik_str, database) -> List[UrlDocument]:
         filings_list = await self.get_filings(cik_str)
 
         documents: List[UrlDocument] = []

@@ -90,6 +90,7 @@ def combine_data(sec_data, bond_data):
                 "cik_str": sec_item.cik_str,
                 "ticker": sec_item.ticker,
                 "issuer": bond.issuer,
+                "isin": bond.isin,
                 "url": bond.url,
                 "currency": bond.currency,
                 "coupon": bond.coupon,
@@ -130,10 +131,10 @@ async def get_sec_data(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
     
-@app.get("/get-company-documents/{company_name}")
-async def get_company_documents(company_name: str, database=Depends(get_db)):
+@app.get("/get-company-documents/{cik_str}")
+async def get_company_documents(cik_str: str, database=Depends(get_db)):
     try:
-        documents: List[UrlDocument] = await secService.get_all_latest_documents(company_name, database)
+        documents: List[UrlDocument] = await secService.get_all_latest_documents(cik_str, database)
         if not documents:
             raise HTTPException(status_code=404, detail="No documents found for the company")
         return documents #{"company_name": company_name, "documents": documents}
