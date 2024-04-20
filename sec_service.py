@@ -24,6 +24,36 @@ class SECService:
         self.embeddingManager = EmbeddingManager()
         self.headers = {"User-Agent": "Mozilla/5.0"}
 
+    def get_all_sec_data(self, database: Session):
+        try:
+            # Use a SQLAlchemy select statement to get all records
+            query = select(SECData)
+            result = database.execute(query)
+            return result.scalars().all()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    async def store_sec_data(self, database: Session):
+         # Fetch data from SEC endpoint using httpx
+        sec_endpoint = "https://www.sec.gov/files/company_tickers.json"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(sec_endpoint, headers=self.headers)
+            response.raise_for_status()  # Raise an exception for non-2xx responses
+            sec_data = response.json()
+
+        # Convert sec_data to a list of dictionaries
+        data_list = [v for v in sec_data.values()]
+
+        # Store data in the database with upsert based on the 'title' column
+        for data in data_list:
+            stmt = insert(SECData).values(data)
+            stmt = stmt.on_conflict_do_update(
+                constraint='uq_sec_data_title',
+                set_=dict([(col.name, col) for col in stmt.excluded]),
+            )
+            database.execute(stmt)
+        database.commit()
+
     async def get_filings(self, cik_str: str):
         # Add leading zeros to cik_str
         cik_str = str(cik_str).zfill(10)
@@ -123,7 +153,7 @@ class SECService:
         documents_with_files = []
         for document in documents:
             document_preexists = self.document_already_exists_in_db(document, database)
-            print("doc exists search done")
+            
             if not(document_preexists) or (document_preexists and overwrite):
                 document_text = await self.fetch_filing_document(document.url)
                 print("fetched filing document")

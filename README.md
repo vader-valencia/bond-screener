@@ -5,7 +5,10 @@ Screening tool for bonds
 - postgres 15
 
 # Running the Simple Web App
-`python -m flask --app run.py run`
+`python -m flask --app web-app/run.py run`
+
+# Running the FastAPI instance alone
+`python -m main.py`
 
 # Running Postgres 15
 - `psql -U <postgres> -h localhost -p 5432 -W`
