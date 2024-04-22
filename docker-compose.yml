@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: dockerfile_postgres
+    environment:
+      POSTGRES_DB: corporate_bonds
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+
+  fastapi:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres

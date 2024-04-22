@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Chat App</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" />
+  <style>
+    .chat-container {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .message-list {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    .message-list li {
+      margin-bottom: 10px;
+    }
+
+    .message-list .sender-name {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .message-list .message-content {
+      background-color: #f6f6f6;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    .input-box {
+      display: flex;
+      flex-direction: column;
+      margin-top: 20px;
+    }
+
+    .input-box input[type="text"],
+    .input-box textarea {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-right: 10px;
+    }
+
+    .input-box input[type="submit"] {
+      background-color: #007bff;
+      color: #fff;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .throbber {
+      display: none;
+      width: 16px;
+      height: 16px;
+      margin-left: 5px;
+      background-image: url("throbber.gif");
+      /* Updated to use local images correctly, adjust path as necessary */
+      background-size: contain;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="chat-container">
+    <form id="searchForm">
+      <label>Select Moody Ratings:</label>
+      <select multiple class="form-select mb-3" id="moodyRatings">
+        <option value="1">Aaa</option>
+        <option value="12">Ba2</option>
+        <!-- Add other options as necessary -->
+      </select>
+      <label>Select Yields:</label>
+      <select multiple class="form-select mb-3" id="yields">
+        <option value="0">Zero</option>
+        <option value="10">Ten</option>
+        <!-- Add other options as necessary -->
+      </select>
+      <label>Select Timeframes:</label>
+      <select multiple class="form-select mb-3" id="timeframes">
+        <option value="shortterm">Short Term</option>
+        <option value="midterm">Mid Term</option>
+        <!-- Add other options as necessary -->
+      </select>
+      <div class="input-box">
+        <input type="submit" value="Search" />
+      </div>
+
+    </form>
+    <table class="table mt-4">
+      <thead>
+        <tr>
+          <th>CIK</th>
+          <th>Ticker</th>
+
+          <th>Issuer</th>
+          <th>ISIN</th>
+          <th>Bond Link</th>
+          <th>Currency</th>
+          <th>Coupon</th>
+          <th>Yield</th>
+          <th>Moody's Rating</th>
+          <th>Maturity Date</th>
+          <th>Bid</th>
+          <th>Ask</th>
+          <th>Corporate Documents</th>
+        </tr>
+      </thead>
+      <tbody id="resultsTable"></tbody>
+    </table>
+    <div id="companyLinks" class="company-links"></div>
+    <div id="errorContainer"></div>
+    <div class="input-box">
+      <input type="submit" id="submitDocumentsButton" onclick="submitSelectedDocuments(event)"
+        value="Submit Selected Documents" />
+    </div>
+    <ul class="message-list" id="messageList"></ul>
+    <div class="input-box">
+      <textarea id="messageInput" placeholder="Type your message" rows="3"></textarea>
+      <input type="submit" value="Send" id="sendButton" disabled />
+      <span class="throbber" id="throbber"></span>
+    </div>
+  </div>
+
+  <script>
+    const conversationData = {{ conversation | tojson}};
+    const companySelect = document.getElementById("companySelect");
+    const fileInput = document.getElementById("fileInput");
+    const companyLinks = document.getElementById("companyLinks");
+    const errorContainer = document.getElementById("errorContainer");
+    const messageList = document.getElementById("messageList");
+    const messageInput = document.getElementById("messageInput");
+    const sendButton = document.getElementById("sendButton");
+    const throbber = document.getElementById("throbber");
+
+    document.getElementById('searchForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+      const moodyRatings = Array.from(document.getElementById('moodyRatings').selectedOptions).map(option => option.value);
+      const yields = Array.from(document.getElementById('yields').selectedOptions).map(option => option.value);
+      const timeframes = Array.from(document.getElementById('timeframes').selectedOptions).map(option => option.value);
+
+      // Example URL construction, modify as needed for your actual API endpoint and parameters
+      const url = `http://localhost:8000/get-sec-data?ratings=${moodyRatings.join(',')}&yields=${yields.join(',')}&timeframes=${timeframes.join(',')}`;
+
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          const resultsTable = document.getElementById('resultsTable');
+          resultsTable.innerHTML = ''; // Clear previous results
+          data.forEach(item => {
+            const row = resultsTable.insertRow();
+            row.innerHTML = `
+          <td>${item.cik_str}</td>
+          <td>${item.ticker}</td>
+          <td>${item.issuer}</td>
+          <td>${item.isin}</td>
+          <td><a href="${item.url}" target="_blank">Bond Link</a></td>
+          <td>${item.currency}</td>
+          <td>${item.coupon}</td>
+          <td>${item.yield}</td>
+          <td>${item.moody_rating}</td>
+          <td>${item.maturity_date}</td>
+          <td>${item.bid}</td>
+          <td>${item.ask}</td>
+          <td>
+            <div class="input-box">
+              <input type="submit" value="Get Documents" onclick="displayCompanyLinks('${item.cik_str}')"/>
+            </div>
+          </td>
+        `;
+          });
+        })
+        .catch(error => console.error('Error:', error));
+    });
+
+
+    function showThrobber() {
+      throbber.style.display = "inline-block";
+    }
+
+    function hideThrobber() {
+      throbber.style.display = "none";
+    }
+
+    document.getElementById('submitDocumentsButton').addEventListener('click', submitSelectedDocuments);
+
+    let selectedDocuments = [];
+
+    function displayCompanyLinks(company) {
+      companyLinks.innerHTML = ''; // Clear previous links
+      if (company) {
+        fetch(`http://localhost:8000/get-company-documents/${company}`)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Network response was not ok: ' + response.statusText);
+            }
+            return response.json();
+          })
+          .then(data => {
+            console.log(data); // Log data to see what you actually get from the server
+            if (data.error) {
+              alert('Error retrieving documents: ' + data.error);
+            } else {
+              displayDocuments(data);
+            }
+          })
+          .catch(error => {
+            console.error('Error fetching company documents:', error);
+            alert('Failed to fetch documents for ' + company);
+          });
+      }
+    }
+
+
+    function displayDocuments(data) {
+      data.forEach(element => {
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.marginBottom = '10px';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.marginRight = '10px';
+        checkbox.onchange = function () {
+          if (this.checked) {
+            selectedDocuments.push(element); // Add the document URL to the selected list
+            window.open(element.url, '_blank'); // Open the document in a new tab
+          } else {
+            selectedDocuments = selectedDocuments.filter(url => url !== element.url); // Remove the document URL from the selected list
+          }
+        };
+
+        const link = document.createElement('a');
+        link.href = element.url;
+        link.textContent = element.primary_document_type;
+        link.target = '_blank';
+
+        container.appendChild(checkbox);
+        container.appendChild(link);
+        companyLinks.appendChild(container);
+      });
+    }
+
+
+    function submitSelectedDocuments(event) {
+      event.preventDefault();
+      console.log('Submitting:', JSON.stringify({ documents: selectedDocuments }));  // Log the exact payload
+
+      const cik_str = selectedDocuments[0].cik_str
+
+      fetch(`http://localhost:8000/store-company-documents`, {  // Corrected endpoint
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(selectedDocuments)
+      })
+        .then(response => response.json())
+        .then(data => {
+          console.log('Submission successful:', data);
+          alert('Documents submitted successfully!');
+        })
+        .catch(error => {
+          console.error('Error submitting documents:', error);
+          alert('Failed to submit documents.');
+        });
+    }
+
+
+    function checkRequirements() {
+      const companySelected = companySelect.value !== "";
+      const filesUploaded = fileInput.files.length > 0;
+      const errors = [];
+
+      if (!companySelected) {
+        errors.push("Please select a company.");
+      }
+      if (!filesUploaded) {
+        errors.push("Please upload at least one PDF file.");
+      }
+
+      displayErrors(errors);
+
+      sendButton.disabled = errors.length > 0;
+    }
+
+    function displayErrors(errors) {
+      errorContainer.innerHTML = '';
+      errors.forEach(error => {
+        const errorP = document.createElement('p');
+        errorP.textContent = error;
+        errorP.className = 'error-message';
+        errorContainer.appendChild(errorP);
+      });
+    }
+
+    function renderMessage(sender, message) {
+      const listItem = document.createElement('li');
+      const senderName = document.createElement('div');
+      senderName.className = 'sender-name';
+      senderName.innerText = sender;
+
+      const messageContent = document.createElement('div');
+      messageContent.className = 'message-content';
+      messageContent.innerText = message;
+
+      listItem.appendChild(senderName);
+      listItem.appendChild(messageContent);
+      messageList.appendChild(listItem);
+    }
+
+    // Render initial conversation data
+    function renderConversation() {
+      conversationData.forEach((item) => {
+        const listItem = document.createElement("li");
+        const senderName = document.createElement("div");
+        senderName.className = "sender-name";
+        senderName.innerText = translateRole(item.role);
+
+        const messageContent = document.createElement("div");
+        messageContent.className = "message-content";
+        messageContent.innerText = item.content;
+
+        listItem.appendChild(senderName);
+        listItem.appendChild(messageContent);
+        messageList.appendChild(listItem);
+      });
+    }
+
+    // Handle message submission
+    function submitMessage() {
+      const message = messageInput.value.trim();
+      if (message !== '') {
+        renderMessage('You', message);
+        messageInput.value = '';
+        showThrobber(); // Show the throbber before making the API call
+
+
+        fetch('/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ message })
+        })
+          .then(response => response.json())
+          .then(data => {
+            const responseMessage = data.message;
+            renderMessage('ChatGPT', responseMessage);
+          })
+          .catch(error => {
+            console.error('Error:', error);
+          })
+          .finally(() => {
+            hideThrobber();
+          });
+
+      }
+    }
+
+    companySelect.addEventListener("change", function () {
+      const selectedCompany = companySelect.value;
+      console.log(selectedCompany)
+      displayCompanyLinks(selectedCompany);
+      checkRequirements();
+    });
+
+    fileInput.addEventListener("change", function () {
+      checkRequirements();
+    });
+
+    sendButton.addEventListener("click", submitMessage);
+    messageInput.addEventListener("keydown", (event) => {
+      if (event.keyCode === 13 && !event.shiftKey) {
+        event.preventDefault();
+        submitMessage();
+      }
+    });
+
+    // Render initial conversation
+    renderConversation();
+
+  </script>
+</body>
+
+</html>
